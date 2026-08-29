@@ -28,6 +28,7 @@ export default function ReservationForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const selectedDay = new Date(form.reservation_date + 'T00:00:00').getDay(); if (selectedDay === 1) { setError('Sorry, we are closed on Mondays. Please choose another date.'); return; }
     setSubmitting(true);
     setError(null);
 

@@ -1,12 +1,34 @@
-import { useState } from 'react';
-import { CalendarPlus, LayoutDashboard } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { CalendarPlus, LayoutDashboard, LogOut } from 'lucide-react';
 import ReservationForm from '@/components/ReservationForm';
 import AdminDashboard from '@/components/AdminDashboard';
+import AdminLogin from '@/components/AdminLogin';
+import { supabase } from '@/lib/supabase';
 
 type View = 'book' | 'admin';
 
 export default function App() {
   const [view, setView] = useState<View>('book');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsLoggedIn(!!data.session);
+      setCheckingSession(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setView('book');
+  }
 
   return (
     <div className="min-h-screen bg-stone-100">
@@ -19,14 +41,32 @@ export default function App() {
               BISTRO
             </span>
           </div>
-          <div className="flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 p-1">
-            <NavButton active={view === 'book'} onClick={() => setView('book')} icon={CalendarPlus} label="Book a Table" />
-            <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={LayoutDashboard} label="Admin" />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-full border border-stone-200 bg-stone-50 p-1">
+              <NavButton active={view === 'book'} onClick={() => setView('book')} icon={CalendarPlus} label="Book a Table" />
+              <NavButton active={view === 'admin'} onClick={() => setView('admin')} icon={LayoutDashboard} label="Admin" />
+            </div>
+            {isLoggedIn && view === 'admin' && (
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-stone-600 hover:text-stone-900"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </button>
+            )}
           </div>
         </div>
       </nav>
 
-      {view === 'book' ? <ReservationForm /> : <AdminDashboard />}
+      {view === 'book' && <ReservationForm />}
+      {view === 'admin' && checkingSession && (
+        <p className="py-16 text-center text-stone-500">Loading...</p>
+      )}
+      {view === 'admin' && !checkingSession && !isLoggedIn && (
+        <AdminLogin onSuccess={() => setIsLoggedIn(true)} />
+      )}
+      {view === 'admin' && !checkingSession && isLoggedIn && <AdminDashboard />}
     </div>
   );
 }

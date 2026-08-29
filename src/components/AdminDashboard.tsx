@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+﻿import { useEffect, useState, useCallback } from 'react';
 import {
   CalendarDays, Clock, Users, Phone, Trash2, RefreshCw, Loader2,
-  CheckCircle2, XCircle, Clock3, ClipboardList, Search, ChevronDown,
+  CheckCircle2, XCircle, Clock3, ClipboardList, Search, ChevronDown, MessageCircle, PhoneCall, AlertTriangle,
 } from 'lucide-react';
 import { supabase, type Reservation, type ReservationStatus } from '@/lib/supabase';
 
@@ -19,6 +19,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ReservationStatus | 'all'>('all');
+  const [timingFilter, setTimingFilter] = useState<'all' | 'upcoming' | 'past'>('all');
   const [search, setSearch] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -66,6 +67,8 @@ export default function AdminDashboard() {
     setReservations((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const today = new Date().toISOString().split('T')[0];
+
   const filtered = reservations.filter((r) => {
     const matchesStatus = statusFilter === 'all' || r.status === statusFilter;
     const q = search.toLowerCase().trim();
@@ -73,8 +76,20 @@ export default function AdminDashboard() {
       q === '' ||
       r.name.toLowerCase().includes(q) ||
       r.phone.toLowerCase().includes(q);
-    return matchesStatus && matchesSearch;
+    const matchesTiming =
+      timingFilter === 'all' ||
+      (timingFilter === 'upcoming' && r.reservation_date >= today) ||
+      (timingFilter === 'past' && r.reservation_date < today);
+    return matchesStatus && matchesSearch && matchesTiming;
   });
+
+  const conflictCount = (r: Reservation) =>
+    reservations.filter(
+      (x) =>
+        x.reservation_date === r.reservation_date &&
+        x.reservation_time === r.reservation_time &&
+        x.status !== 'cancelled'
+    ).length;
 
   const stats = {
     total: reservations.length,
@@ -87,7 +102,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-stone-100">
-      {/* Header */}
       <div className="border-b border-stone-200 bg-white">
         <div className="mx-auto max-w-6xl px-6 py-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -105,7 +119,6 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          {/* Stats */}
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Total" value={stats.total} icon={ClipboardList} color="text-stone-600 bg-stone-100" />
             <StatCard label="Pending" value={stats.pending} icon={Clock3} color="text-amber-600 bg-amber-100" />
@@ -115,9 +128,13 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Body */}
       <div className="mx-auto max-w-6xl px-6 py-8">
-        {/* Filters */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          <FilterButton active={timingFilter === 'all'} onClick={() => setTimingFilter('all')} label="All Dates" />
+          <FilterButton active={timingFilter === 'upcoming'} onClick={() => setTimingFilter('upcoming')} label="Upcoming" />
+          <FilterButton active={timingFilter === 'past'} onClick={() => setTimingFilter('past')} label="Past" />
+        </div>
+
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1 sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
@@ -130,7 +147,7 @@ export default function AdminDashboard() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <FilterButton active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} label="All" />
+            <FilterButton active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} label="All Status" />
             {STATUS_ORDER.map((s) => (
               <FilterButton
                 key={s}
@@ -146,7 +163,6 @@ export default function AdminDashboard() {
           <p className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>
         )}
 
-        {/* List */}
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-stone-400" />
@@ -165,6 +181,7 @@ export default function AdminDashboard() {
               <ReservationCard
                 key={r.id}
                 reservation={r}
+                conflicts={conflictCount(r)}
                 updating={updatingId === r.id}
                 onStatusChange={updateStatus}
                 onDelete={deleteReservation}
@@ -210,21 +227,39 @@ function FilterButton({ active, onClick, label }: { active: boolean; onClick: ()
 
 function ReservationCard({
   reservation: r,
+  conflicts,
   updating,
   onStatusChange,
   onDelete,
 }: {
   reservation: Reservation;
+  conflicts: number;
   updating: boolean;
   onStatusChange: (id: string, status: ReservationStatus) => void;
   onDelete: (id: string) => void;
 }) {
   const cfg = STATUS_CONFIG[r.status];
   const StatusIcon = cfg.icon;
+  const hasConflict = conflicts > 1;
+
+  const openWhatsApp = () => {
+    const message = 'Hi ' + r.name + ', this is Maison Bistro. Your reservation for ' + r.party_size + ' on ' + formatDate(r.reservation_date) + ' at ' + formatTime(r.reservation_time) + ' is ' + r.status + '.';
+    const phoneDigits = r.phone.replace(/[^0-9]/g, '');
+    window.open('https://wa.me/' + phoneDigits + '?text=' + encodeURIComponent(message), '_blank');
+  };
+
+  const callCustomer = () => {
+    window.location.href = 'tel:' + r.phone;
+  };
 
   return (
-    <div className="group flex flex-col rounded-2xl border border-stone-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-      {/* Top: name + status */}
+    <div className={`group flex flex-col rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md ${hasConflict ? 'border-orange-300' : 'border-stone-200'}`}>
+      {hasConflict && (
+        <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {conflicts} reservations at this same time
+        </div>
+      )}
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-serif text-lg font-bold text-stone-800">{r.name}</h3>
@@ -239,14 +274,12 @@ function ReservationCard({
         </span>
       </div>
 
-      {/* Details */}
       <div className="mt-4 grid grid-cols-3 gap-2 text-sm">
         <Detail icon={CalendarDays} value={formatDate(r.reservation_date)} />
         <Detail icon={Clock} value={formatTime(r.reservation_time)} />
         <Detail icon={Users} value={`${r.party_size} ${r.party_size === 1 ? 'guest' : 'guests'}`} />
       </div>
 
-      {/* Notes */}
       {r.notes && (
         <div className="mt-3 rounded-lg bg-stone-50 p-3 text-sm text-stone-600">
           <span className="font-medium text-stone-500">Notes: </span>
@@ -254,7 +287,6 @@ function ReservationCard({
         </div>
       )}
 
-      {/* Actions */}
       <div className="mt-auto flex items-center gap-2 pt-4">
         <div className="relative flex-1">
           <select
@@ -270,6 +302,20 @@ function ReservationCard({
           </select>
           <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
         </div>
+        <button
+          onClick={openWhatsApp}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 text-green-500 transition hover:border-green-200 hover:bg-green-50"
+          title="Message on WhatsApp"
+        >
+          <MessageCircle className="h-4 w-4" />
+        </button>
+        <button
+          onClick={callCustomer}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 text-blue-500 transition hover:border-blue-200 hover:bg-blue-50"
+          title="Call customer"
+        >
+          <PhoneCall className="h-4 w-4" />
+        </button>
         <button
           onClick={() => onDelete(r.id)}
           className="flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 text-stone-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
